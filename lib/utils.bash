@@ -2,10 +2,10 @@
 
 set -euo pipefail
 
-# TODO: Ensure this is the correct GitHub homepage where releases can be downloaded for cloudmonkey.
 GH_REPO="https://github.com/apache/cloudstack-cloudmonkey"
 TOOL_NAME="cloudmonkey"
-TOOL_TEST="cmk --version"
+EXECUTABLE_NAME="cmk"
+TOOL_TEST="cmk version"
 
 fail() {
 	echo -e "asdf-$TOOL_NAME: $*"
@@ -14,7 +14,6 @@ fail() {
 
 curl_opts=(-fsSL)
 
-# NOTE: You might want to remove this if cloudmonkey is not hosted on GitHub releases.
 if [ -n "${GITHUB_API_TOKEN:-}" ]; then
 	curl_opts=("${curl_opts[@]}" -H "Authorization: token $GITHUB_API_TOKEN")
 fi
@@ -36,15 +35,53 @@ list_all_versions() {
 	list_github_tags
 }
 
+get_arch() {
+  local arch
+  arch="$(uname -m)"
+
+  case $arch in
+  amd64 | x86_64)
+    echo "x86-64"
+    ;;
+  arm64)
+    echo "arm64"
+    ;;
+  arm32)
+    echo "arm32"
+    ;;
+  *)
+    echo ""
+    ;;
+  esac
+}
+
+get_platform() {
+  [ "Linux" = "$(uname)" ] && echo "linux" || echo "darwin"
+}
+
 download_release() {
-	local version filename url
+	local version filename asset url
 	version="$1"
 	filename="$2"
 
-	# TODO: Adapt the release URL convention for cloudmonkey
-	url="$GH_REPO/archive/v${version}.tar.gz"
+  arch=$(get_arch)
+  if [ -z "$arch" ]; then
+    fail "Unsupported architecture: $arch"
+  fi
+  echo "Detected architecture: $arch"
+
+  platform=$(get_platform)
+  if [ -z "$platform" ]; then
+    fail "Unsupported platform: $platform"
+  fi
+  echo "Detected platform: $platform"
+
+	asset="cmk.${platform}.${arch}"
+	url="$GH_REPO/releases/download/${version}/${asset}"
 
 	echo "* Downloading $TOOL_NAME release $version..."
+	echo "* Fetching release asset ${asset} on GitHub..."
+
 	curl "${curl_opts[@]}" -o "$filename" -C - "$url" || fail "Could not download $url"
 }
 
@@ -61,7 +98,8 @@ install_version() {
 		mkdir -p "$install_path"
 		cp -r "$ASDF_DOWNLOAD_PATH"/* "$install_path"
 
-		# TODO: Assert cloudmonkey executable exists.
+		chmod +x "$install_path/$EXECUTABLE_NAME"
+
 		local tool_cmd
 		tool_cmd="$(echo "$TOOL_TEST" | cut -d' ' -f1)"
 		test -x "$install_path/$tool_cmd" || fail "Expected $install_path/$tool_cmd to be executable."
